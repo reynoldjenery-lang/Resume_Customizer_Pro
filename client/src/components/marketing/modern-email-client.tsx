@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { formatDistanceToNow, format } from 'date-fns';
 import { apiRequest } from '@/lib/queryClient';
 import { Button } from '@/components/ui/button';
@@ -24,34 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Mail,
-  Inbox,
-  Send,
-  FileText,
-  Archive,
-  Star,
-  Search,
-  Plus,
-  Paperclip,
-  Reply,
-  ReplyAll,
-  Forward,
-  Trash2,
-  MoreVertical,
-  Settings,
-  RefreshCw,
-  Check,
-  X,
-  User,
-  Clock,
-  Tag,
-  Filter,
-  SortAsc,
-  ChevronDown,
-  ChevronRight,
-  AtSign,
-} from 'lucide-react';
+import { Mail, Inbox, Send, FileText, Archive, Star, Search, Plus, Paperclip, Reply, ReplyAll, Forward, Trash2, MoveVertical as MoreVertical, Settings, RefreshCw, Check, X, User, Clock, Tag, Filter, Import as SortAsc, ChevronDown, ChevronRight, AtSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import ComposeDialog from './compose-dialog';
@@ -108,9 +81,7 @@ const LABELS = [
   { id: 'follow-up', name: 'Follow-up', color: 'bg-yellow-500' },
 ];
 
-export default function ModernEmailClient() {
-  // Collapsible sidebar state
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+export default function ModernEmailClient({ accountFilter }: { accountFilter?: string | null } = {}) {
   const [selectedFolder, setSelectedFolder] = useState('inbox');
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -120,6 +91,7 @@ export default function ModernEmailClient() {
   const [bulkActionMode, setBulkActionMode] = useState(false);
   const [replyData, setReplyData] = useState<any>(null);
   const [composeMode, setComposeMode] = useState<'compose' | 'reply' | 'reply-all' | 'forward'>('compose');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   const queryClient = useQueryClient();
 
@@ -138,18 +110,19 @@ export default function ModernEmailClient() {
     retry: false,
   });
 
-  // Fetch email threads
-  const { data: emailThreads = [], isLoading: threadsLoading, refetch: refetchThreads } = useQuery<EmailThread[]>({
+  // Fetch email threads with paging and auto-refresh every 30 seconds
+  const THREADS_LIMIT = 50;
+  const threadsQuery = useInfiniteQuery({
     queryKey: ['/api/marketing/emails/threads', selectedFolder, searchQuery],
-    queryFn: async () => {
+    queryFn: async ({ pageParam = 1 }: { pageParam?: number }) => {
       try {
-        if (searchQuery.trim()) {
-          const response = await apiRequest('GET', `/api/marketing/emails/search?q=${encodeURIComponent(searchQuery)}&limit=50`);
+          if (searchQuery.trim()) {
+            const response = await apiRequest('GET', `/api/marketing/emails/search?q=${encodeURIComponent(searchQuery)}&limit=${THREADS_LIMIT}&page=${pageParam}${accountFilter ? `&accountId=${accountFilter}` : ''}`);
           if (!response.ok) return [] as EmailThread[];
           const data = await response.json();
           return data.threads || [];
         } else {
-          const response = await apiRequest('GET', `/api/marketing/emails/threads?type=${selectedFolder}&limit=50`);
+            const response = await apiRequest('GET', `/api/marketing/emails/threads?type=${selectedFolder}&limit=${THREADS_LIMIT}&page=${pageParam}${accountFilter ? `&accountId=${accountFilter}` : ''}`);
           if (!response.ok) return [] as EmailThread[];
           return response.json();
         }
@@ -157,11 +130,25 @@ export default function ModernEmailClient() {
         return [] as EmailThread[];
       }
     },
-    retry: false,
+    getNextPageParam: (lastPage, pages) => {
+      // If last page returned fewer than limit, no more pages
+      if (!lastPage || lastPage.length < THREADS_LIMIT) return undefined;
+      return pages.length + 1;
+    },
+    initialPageParam: 1,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
+    staleTime: 15000,
+    retry: 1,
   });
 
+  const emailThreads: EmailThread[] = threadsQuery.data ? (threadsQuery.data.pages.flat() as EmailThread[]) : [];
+  const threadsLoading = threadsQuery.isLoading;
+  const isFetching = threadsQuery.isFetching;
+  const refetchThreads = threadsQuery.refetch;
+
   // Fetch messages for selected thread
-  const { data: threadMessages = [] } = useQuery<EmailMessage[]>({
+  const { data: threadMessages = [], isLoading: threadMessagesLoading, isFetching: threadMessagesFetching } = useQuery<EmailMessage[]>({
     queryKey: ['/api/marketing/emails/threads', selectedThread, 'messages'],
     queryFn: async () => {
       try {
@@ -176,6 +163,52 @@ export default function ModernEmailClient() {
     enabled: !!selectedThread,
     retry: false,
   });
+
+  // Component to safely render HTML bodies and handle image loading/fallbacks
+  function MessageBody({ html, text }: { html?: string | null; text?: string | null }) {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+      const el = containerRef.current;
+      if (!el) return;
+
+      // Set the HTML content
+      if (html) {
+        el.innerHTML = html;
+      } else {
+        el.textContent = text || '';
+      }
+
+      // Find images and attach load/error handlers and lazy loading
+      const imgs = Array.from(el.querySelectorAll('img')) as HTMLImageElement[];
+      imgs.forEach((img) => {
+        // Prefer native lazy loading where available
+        img.loading = 'lazy';
+
+        // If image fails, replace with a simple placeholder
+        const handleError = () => {
+          img.onerror = null;
+          img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect width="100%" height="100%" fill="#f3f4f6"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#9ca3af" font-family="Arial" font-size="14">Image failed to load</text></svg>`);
+        };
+
+        const handleLoad = () => {
+          // remove any placeholder styles if needed
+        };
+
+        img.addEventListener('error', handleError);
+        img.addEventListener('load', handleLoad);
+      });
+
+      return () => {
+        imgs.forEach((img) => {
+          img.onerror = null;
+          img.onload = null;
+        });
+      };
+    }, [html, text]);
+
+    return <div ref={containerRef} className="prose prose-base max-w-none" />;
+  }
 
   // OAuth handlers
   const handleGmailOAuth = async () => {
@@ -265,12 +298,18 @@ export default function ModernEmailClient() {
       if (!response.ok) throw new Error('Sync failed');
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/marketing/emails/threads'] });
-      toast.success('Emails synced successfully!');
+      queryClient.invalidateQueries({ queryKey: ['/api/marketing/email-accounts'] });
+      const count = data.syncedCount || 0;
+      if (count > 0) {
+        toast.success(`Synced ${count} new email${count === 1 ? '' : 's'}!`);
+      } else {
+        toast.info('Already up to date');
+      }
     },
-    onError: () => {
-      toast.error('Failed to sync emails');
+    onError: (error: any) => {
+      toast.error(error?.message || 'Failed to sync emails');
     },
   });
 
@@ -284,7 +323,7 @@ export default function ModernEmailClient() {
   };
 
   const handleReply = (mode: 'reply' | 'reply-all' | 'forward') => {
-    const selectedThreadData = emailThreads.find(t => t.id === selectedThread);
+  const selectedThreadData = emailThreads.find((t: EmailThread) => t.id === selectedThread);
     const latestMessage = threadMessages[threadMessages.length - 1];
     
     if (selectedThreadData && latestMessage) {
@@ -308,16 +347,16 @@ export default function ModernEmailClient() {
 
   return (
     <TooltipProvider>
-  <div className="flex h-[800px] bg-gray-50 rounded-lg overflow-hidden border">
+  <div className="flex h-[800px] bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl overflow-hidden border border-slate-200 shadow-lg">
         {/* Sidebar */}
         <div className={cn(
-          "bg-white border-r flex flex-col transition-all duration-300",
+          "bg-white/95 backdrop-blur-sm border-r border-slate-200 flex flex-col transition-all duration-300 shadow-sm",
           sidebarCollapsed ? "w-16" : "w-64"
         )}>
           {/* Header */}
-          <div className={cn("border-b", sidebarCollapsed ? "p-2" : "p-4")}> 
-            <div className={cn("flex items-center justify-between", sidebarCollapsed ? "mb-2" : "mb-4")}> 
-              {!sidebarCollapsed && <h2 className="text-lg font-semibold text-gray-900">Mail</h2>}
+          <div className={cn("border-b border-slate-200 bg-gradient-to-b from-white to-slate-50", sidebarCollapsed ? "p-2" : "p-4")}>
+            <div className={cn("flex items-center justify-between", sidebarCollapsed ? "mb-2" : "mb-4")}>
+              {!sidebarCollapsed && <h2 className="text-lg font-semibold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">Mail</h2>}
               <div className="flex gap-1">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -364,9 +403,9 @@ export default function ModernEmailClient() {
             </div>
             
             {!sidebarCollapsed && (
-              <Button 
+              <Button
                 onClick={handleCompose}
-                className="w-full bg-blue-600 hover:bg-blue-700"
+                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-md hover:shadow-lg transition-all"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Compose
@@ -485,9 +524,9 @@ export default function ModernEmailClient() {
         </div>
 
   {/* Main Content */}
-  <div className="flex-1 flex flex-col" style={{ background: '#f8fafc' }}>
+  <div className="flex-1 flex flex-col bg-gradient-to-br from-slate-50 to-white">
           {/* Search Bar */}
-          <div className="p-4 border-b bg-white">
+          <div className="p-4 border-b border-slate-200 bg-white/90 backdrop-blur-sm shadow-sm">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
@@ -501,9 +540,9 @@ export default function ModernEmailClient() {
 
           <div className="flex-1 flex">
             {/* Email List */}
-            <div className={cn("transition-all duration-300 border-r bg-gray-50", sidebarCollapsed ? "w-0 min-w-0" : "w-[28rem] min-w-[24rem]")}> 
+              <div className={cn("transition-all duration-300 border-r border-slate-200 bg-white/50 backdrop-blur-sm", sidebarCollapsed ? "w-0 min-w-0" : "w-[36rem] min-w-[30rem]")}>
               {/* List Header */}
-              <div className="p-3 border-b flex items-center justify-between">
+              <div className="p-3 border-b border-slate-200 bg-gradient-to-r from-white to-slate-50">
                 <div className="flex items-center gap-2">
                   {bulkActionMode && (
                     <Button
@@ -549,14 +588,24 @@ export default function ModernEmailClient() {
               <ScrollArea className="h-[calc(100%-60px)] pr-1">
                 {threadsLoading ? (
                   <div className="p-8 text-center">
-                    <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-gray-400" />
-                    <p className="text-sm text-gray-500">Loading emails...</p>
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="h-12 w-12 rounded-full bg-gradient-to-r from-blue-400 to-blue-600 animate-pulse"></div>
+                      </div>
+                      <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-blue-600 relative z-10" />
+                    </div>
+                    <p className="text-sm text-slate-600 mt-4 font-medium">Loading emails...</p>
                   </div>
                 ) : emailThreads.length === 0 ? (
                   <div className="p-8 text-center">
-                    <Mail className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                    <p className="text-sm text-gray-500 mb-4">
+                    <div className="h-16 w-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
+                      <Mail className="h-8 w-8 text-slate-400" />
+                    </div>
+                    <p className="text-sm text-slate-600 font-medium mb-2">
                       {searchQuery ? 'No emails found' : 'No emails in this folder'}
+                    </p>
+                    <p className="text-xs text-slate-500 mb-4">
+                      {searchQuery ? 'Try a different search term' : 'Your mailbox is empty'}
                     </p>
                     {!searchQuery && emailAccounts.length > 0 && (
                       <div className="space-y-2">
@@ -582,16 +631,31 @@ export default function ModernEmailClient() {
                     )}
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-1 py-2">
-                    {emailThreads.map((thread) => (
+                  <div className="flex flex-col gap-2 py-2 px-2">
+                    {emailThreads.map((thread: EmailThread) => (
                       <div
                         key={thread.id}
                         className={cn(
-                          "group flex items-center px-2 py-3 bg-white rounded-lg shadow-sm border border-transparent cursor-pointer transition-all hover:shadow-md hover:border-blue-200",
-                          selectedThread === thread.id && "bg-blue-50 border-blue-600 border"
+                          "group flex items-center px-3 py-3 bg-white rounded-xl border cursor-pointer transition-all duration-200",
+                          selectedThread === thread.id
+                            ? "bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-400 shadow-md ring-2 ring-blue-200"
+                            : "border-slate-200 hover:shadow-lg hover:border-blue-300 hover:bg-slate-50"
                         )}
-                        style={{ minHeight: 72 }}
+                        style={{ minHeight: 76 }}
                         onClick={() => setSelectedThread(thread.id)}
+                        onMouseEnter={() => {
+                          // Prefetch messages for quicker preview
+                          try {
+                            queryClient.prefetchQuery({
+                              queryKey: ['/api/marketing/emails/threads', thread.id, 'messages'],
+                              queryFn: async () => {
+                                const response = await apiRequest('GET', `/api/marketing/emails/threads/${thread.id}/messages`);
+                                if (!response.ok) return [] as EmailMessage[];
+                                return response.json();
+                              },
+                            });
+                          } catch (e) {}
+                        }}
                       >
                         <input
                           type="checkbox"
@@ -631,7 +695,7 @@ export default function ModernEmailClient() {
                             </span>
                           </div>
                           <div className="flex items-center gap-2 mt-1">
-                            <span className="text-sm text-gray-800 font-medium truncate max-w-[12rem]">
+                            <span className="text-sm text-gray-800 font-medium truncate max-w-[16rem]">
                               {thread.subject || '(no subject)'}
                             </span>
                             {thread.messageCount > 1 && (
@@ -640,7 +704,7 @@ export default function ModernEmailClient() {
                               </Badge>
                             )}
                           </div>
-                          <div className="text-xs text-gray-500 truncate max-w-[16rem] mt-0.5">
+                          <div className="text-xs text-gray-500 truncate max-w-[24rem] mt-0.5">
                             {thread.preview || 'No preview available'}
                           </div>
                           <div className="flex items-center gap-2 mt-1">
@@ -653,17 +717,28 @@ export default function ModernEmailClient() {
                         </div>
                       </div>
                     ))}
+                    {/* Load more control */}
+                    <div className="flex items-center justify-center p-4">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => threadsQuery.fetchNextPage()}
+                        disabled={threadsLoading || isFetching || (threadsQuery.data && threadsQuery.data.pages[threadsQuery.data.pages.length - 1].length < THREADS_LIMIT)}
+                      >
+                        {threadsLoading || isFetching ? 'Loading...' : (threadsQuery.data && threadsQuery.data.pages[threadsQuery.data.pages.length - 1].length < THREADS_LIMIT) ? 'No more' : 'Load more'}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </ScrollArea>
             </div>
 
             {/* Email Content */}
-            <div className="flex-1 bg-gray-100" style={{ minWidth: 0 }}>
+            <div className="flex-1 bg-gradient-to-br from-white to-slate-50" style={{ minWidth: 0 }}>
               {selectedThread ? (
                 <div className="h-full flex flex-col px-0 md:px-8 py-4">
                   {/* Email Header */}
-                  <div className="p-6 border-b bg-white rounded-t-lg shadow-sm mb-4">
+                  <div className="p-6 border-b border-slate-200 bg-white rounded-t-xl shadow-md mb-4 backdrop-blur-sm">
                     <div className="flex items-center justify-between mb-2">
                       <h2 className="text-lg font-semibold text-gray-900">
                         {threadMessages[0]?.subject || '(no subject)'}
@@ -738,9 +813,14 @@ export default function ModernEmailClient() {
 
                   {/* Messages */}
                   <ScrollArea className="flex-1">
-                    <div className="space-y-8">
-                      {threadMessages.map((message) => (
-                        <Card key={message.id} className="border-l-4 border-l-blue-500 bg-white shadow-md rounded-lg">
+                    <div className="space-y-6">
+                      {(threadMessagesLoading || threadMessagesFetching) ? (
+                        <div className="p-8 text-center">
+                          <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-blue-600" />
+                          <p className="text-sm text-slate-600 mt-2">Loading message...</p>
+                        </div>
+                      ) : threadMessages.map((message) => (
+                        <Card key={message.id} className="border-l-4 border-l-blue-500 bg-white shadow-lg rounded-xl hover:shadow-xl transition-shadow">
                           <CardContent className="p-8">
                             <div className="flex items-start justify-between mb-6">
                               <div className="flex items-center gap-3">
@@ -763,12 +843,8 @@ export default function ModernEmailClient() {
                               </div>
                             </div>
                             
-                            <div className="prose prose-base max-w-none bg-gray-50 rounded-lg p-6 my-4">
-                              {message.htmlBody ? (
-                                <div dangerouslySetInnerHTML={{ __html: message.htmlBody }} />
-                              ) : (
-                                <p className="whitespace-pre-wrap">{message.textBody}</p>
-                              )}
+                            <div className="bg-gray-50 rounded-lg p-6 my-4">
+                              <MessageBody html={message.htmlBody} text={message.textBody} />
                             </div>
                             
                             {message.attachments && message.attachments.length > 0 && (
@@ -788,8 +864,6 @@ export default function ModernEmailClient() {
                                 </div>
                               </div>
                             )}
-  // Collapsible sidebar state
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
                           </CardContent>
                         </Card>
                       ))}
@@ -798,10 +872,12 @@ export default function ModernEmailClient() {
                 </div>
               ) : (
                 <div className="h-full flex items-center justify-center">
-                  <div className="text-center">
-                    <Mail className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Select an email</h3>
-                    <p className="text-gray-500">Choose an email from the list to view its content</p>
+                  <div className="text-center animate-in fade-in duration-500">
+                    <div className="h-20 w-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shadow-md">
+                      <Mail className="h-10 w-10 text-slate-400" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-slate-800 mb-2">Select an email</h3>
+                    <p className="text-slate-500 max-w-sm mx-auto">Choose an email from the list to view its content and start a conversation</p>
                   </div>
                 </div>
               )}

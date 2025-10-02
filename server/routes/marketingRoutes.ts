@@ -1240,6 +1240,62 @@ router.get('/emails/threads', async (req, res) => {
   }
 });
 
+// Get total unread messages count for inbox and per-account breakdown
+router.get('/emails/unread-count', async (req, res) => {
+  try {
+    const { emailMessages, emailThreads, emailAccounts } = await import('@shared/schema');
+
+    // Total unread messages for non-archived threads
+    const totalResult = await db.select({ count: sql`COUNT(*)` }).from(emailMessages)
+      .where(and(
+        eq(emailMessages.createdBy, req.user!.id),
+        eq(emailMessages.isRead, false),
+        sql`EXISTS (select 1 from email_threads t where t.id = ${emailMessages.threadId} and t.created_by = ${req.user!.id} and (t.is_archived = FALSE or t.is_archived IS NULL))`
+      ));
+
+    const totalRow: any = totalResult && totalResult[0];
+    const rawTotal = totalRow?.count ?? 0;
+    const totalUnread = typeof rawTotal === 'string' ? parseInt(rawTotal, 10) : Number(rawTotal || 0);
+
+    // Per-account unread counts
+    // Group by email_account_id
+    const perAccountRows: any[] = await db.select({ accountId: emailMessages.emailAccountId, count: sql`COUNT(*)` })
+      .from(emailMessages)
+      .where(and(
+        eq(emailMessages.createdBy, req.user!.id),
+        eq(emailMessages.isRead, false),
+        sql`EXISTS (select 1 from email_threads t where t.id = ${emailMessages.threadId} and t.created_by = ${req.user!.id} and (t.is_archived = FALSE or t.is_archived IS NULL))`
+      ))
+      .groupBy(emailMessages.emailAccountId);
+
+    // Map to include account metadata
+    const accountIds = perAccountRows.map(r => r.accountId).filter(Boolean);
+    let accountsById: Record<string, any> = {};
+    if (accountIds.length > 0) {
+      // Fetch all accounts for the user and map locally to avoid driver-specific 'in' helpers
+      const accountRows = await db.select().from(emailAccounts).where(eq(emailAccounts.userId, req.user!.id));
+      accountsById = (accountRows || []).reduce((acc: any, a: any) => ({ ...acc, [a.id]: a }), {});
+    }
+
+    const perAccount = perAccountRows.map((r: any) => {
+      const raw = r.count;
+      const c = typeof raw === 'string' ? parseInt(raw, 10) : Number(raw || 0);
+      const acct = r.accountId ? accountsById[r.accountId] : null;
+      return {
+        accountId: r.accountId || null,
+        accountName: acct?.accountName || acct?.emailAddress || null,
+        emailAddress: acct?.emailAddress || null,
+        unreadCount: c,
+      };
+    });
+
+    res.json({ unreadCount: totalUnread, perAccount });
+  } catch (error) {
+    console.error('Error fetching unread count:', error);
+    res.status(500).json({ message: 'Failed to fetch unread count' });
+  }
+});
+
 // Get messages in a thread
 router.get('/emails/threads/:threadId/messages', async (req, res) => {
   try {
