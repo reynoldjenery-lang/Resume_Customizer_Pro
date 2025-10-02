@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Google Drive Connect</title>
+    <style>
+      body {font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; display:flex; align-items:center; justify-content:center; height:100vh; margin:0;}
+      .box {max-width:520px;padding:20px;border-radius:8px;border:1px solid #e6e6e6;text-align:center}
+      .muted {color:#666;font-size:14px}
+      a {color:#0366d6}
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h2 id="title">Completing Google Drive connection…</h2>
+      <p id="message" class="muted">Please wait — this window will close automatically.</p>
+      <p id="fallback" style="display:none" class="muted">If this window doesn't close, copy the code below and paste it in the app, or close this window.</p>
+      <pre id="code" style="background:#f7f7f7;padding:8px;border-radius:6px;overflow:auto;display:none"></pre>
+      <p id="actions" style="margin-top:12px;display:none"><a id="closeLink" href="#">Close window</a></p>
+    </div>
+
+    <script>
+      (function(){
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const code = params.get('code');
+          const error = params.get('error');
+          const state = params.get('state');
+
+          function postToOpener(payload) {
+            try {
+              // Restrict to same origin for safety
+              const targetOrigin = window.location.origin;
+              if (window.opener && !window.opener.closed) {
+                window.opener.postMessage(payload, targetOrigin);
+                return true;
+              }
+            } catch (e) {
+              // ignore
+            }
+            return false;
+          }
+
+          if (code) {
+            // Send success message containing the authorization code to the opener
+            const sent = postToOpener({ type: 'GOOGLE_DRIVE_AUTH_SUCCESS', code, state });
+            if (sent) {
+              // Give opener a moment to receive message, then close
+              setTimeout(() => window.close(), 600);
+              document.getElementById('message').textContent = 'Connection complete — closing...';
+            } else {
+              // Fallback UI: show code so user can paste it manually
+              document.getElementById('message').style.display = 'none';
+              document.getElementById('fallback').style.display = 'block';
+              const codeEl = document.getElementById('code');
+              codeEl.textContent = code;
+              codeEl.style.display = 'block';
+              document.getElementById('actions').style.display = 'block';
+            }
+          } else if (error) {
+            postToOpener({ type: 'GOOGLE_DRIVE_AUTH_ERROR', error });
+            document.getElementById('title').textContent = 'Google Drive connection failed';
+            document.getElementById('message').textContent = decodeURIComponent(error);
+          } else {
+            // No code and no error: show fallback
+            document.getElementById('message').style.display = 'none';
+            document.getElementById('fallback').style.display = 'block';
+            document.getElementById('code').textContent = window.location.href;
+            document.getElementById('code').style.display = 'block';
+            document.getElementById('actions').style.display = 'block';
+          }
+
+          document.getElementById('closeLink').addEventListener('click', function(e){ e.preventDefault(); window.close(); });
+        } catch (e) {
+          // If anything goes wrong, show a simple message
+          document.getElementById('title').textContent = 'Unable to complete sign-in';
+          document.getElementById('message').textContent = 'An unexpected error occurred.';
+        }
+      })();
+    </script>
+  </body>
+</html>

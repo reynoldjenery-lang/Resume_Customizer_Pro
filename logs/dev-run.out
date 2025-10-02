@@ -1,0 +1,9 @@
+[dotenv@17.2.2] injecting env (16) from .env -- tip: ⚙️  override existing env vars with { override: true }
+Connecting to Neon database via HTTP...
+[dotenv@17.2.2] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+Using memory session store for development
+[Auth] Active sessions: 0, Login attempts tracked: 0
+3:41:59 AM [express] serving on port 5000 (env=development)
+[dotenv@17.2.2] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+Message sent: <204f780d-5237-a9d0-1e4d-cac11fc2ab29@gmail.com>
+Verification email sent via SMTP to test+20250928033838@example.com

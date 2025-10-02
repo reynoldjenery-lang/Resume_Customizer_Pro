@@ -1,0 +1,6 @@
+[dotenv@17.2.2] injecting env (16) from .env -- tip: 📡 observe env with Radar: https://dotenvx.com/radar
+Connecting to Neon database via HTTP...
+[dotenv@17.2.2] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+Using memory session store for development
+[Auth] Active sessions: 0, Login attempts tracked: 0
+3:36:39 AM [express] serving on port 5000 (env=development)
