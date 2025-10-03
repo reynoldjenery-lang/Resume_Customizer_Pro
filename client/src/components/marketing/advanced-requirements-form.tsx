@@ -384,12 +384,15 @@ Additional Information:
                           name={"consultantId" as const}
                           control={control}
                           render={({ field }) => (
-                            <Select onValueChange={field.onChange} value={field.value ?? undefined}>
+                            <Select 
+                              onValueChange={(value) => field.onChange(value === 'unassigned' ? null : value)} 
+                              value={field.value ?? 'unassigned'}
+                            >
                               <SelectTrigger>
                                 <SelectValue placeholder="Select consultant" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">No consultant assigned</SelectItem>
+                                <SelectItem value="unassigned">No consultant assigned</SelectItem>
                                 {consultants.filter(c => c.status === 'Active').map((consultant) => (
                                   <SelectItem key={consultant.id} value={consultant.id}>
                                     {consultant.name} ({consultant.email})

@@ -4,12 +4,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Calendar, Plus, Clock, User, Building } from 'lucide-react';
+import { toast } from 'sonner';
+import InterviewForm from './interview-form';
 
 export default function InterviewsSection() {
   const [activeTab, setActiveTab] = useState('All');
+  const [showInterviewForm, setShowInterviewForm] = useState(false);
+  const [selectedInterview, setSelectedInterview] = useState<any>(null);
+  const [showEditForm, setShowEditForm] = useState(false);
 
   const interviewTabs = ['All', 'Cancelled', 'Re-Scheduled', 'Confirmed', 'Completed'];
-
   // Mock data
   const mockInterviews = [
     {
@@ -46,11 +50,34 @@ export default function InterviewsSection() {
     }
   };
 
+  const handleScheduleInterview = () => {
+    setSelectedInterview(null);
+    setShowInterviewForm(true);
+  };
+
+  const handleEditInterview = (interview: any) => {
+    setSelectedInterview(interview);
+    setShowEditForm(true);
+  };
+
+  const handleFormClose = () => {
+    setShowInterviewForm(false);
+    setShowEditForm(false);
+    setSelectedInterview(null);
+  };
+
+  const handleFormSubmit = async (interviewData: any) => {
+    console.log('Submitting interview:', interviewData);
+    // Handle form submission - this would typically call an API
+    toast.success('Interview scheduled successfully!');
+    return Promise.resolve();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Interview Management</h2>
-        <Button>
+        <Button onClick={handleScheduleInterview} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-md hover:shadow-lg transition-all">
           <Plus size={16} className="mr-2" />
           Schedule Interview
         </Button>
@@ -108,7 +135,7 @@ export default function InterviewsSection() {
                         <Button variant="outline" size="sm">
                           View Details
                         </Button>
-                        <Button variant="ghost" size="sm">
+                        <Button variant="ghost" size="sm" onClick={() => handleEditInterview(interview)}>
                           Edit
                         </Button>
                       </div>
@@ -125,7 +152,7 @@ export default function InterviewsSection() {
                   <p className="text-muted-foreground mb-4">
                     {tab === 'All' ? 'Schedule your first interview to get started.' : `No ${tab.toLowerCase()} interviews found.`}
                   </p>
-                  <Button>
+                  <Button onClick={handleScheduleInterview} className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-md hover:shadow-lg transition-all">
                     <Plus size={16} className="mr-2" />
                     Schedule Interview
                   </Button>
@@ -161,6 +188,17 @@ export default function InterviewsSection() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Interview Form */}
+      {(showInterviewForm || showEditForm) && (
+        <InterviewForm
+          open={showInterviewForm || showEditForm}
+          onClose={handleFormClose}
+          onSubmit={handleFormSubmit}
+          initialData={showEditForm ? selectedInterview : undefined}
+          editMode={showEditForm}
+        />
+      )}
     </div>
   );
 }
