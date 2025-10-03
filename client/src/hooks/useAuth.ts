@@ -22,7 +22,7 @@ export function useAuth() {
     queryFn: async () => {
       try {
         console.log('🔍 useAuth: Fetching user data...');
-        const response = await fetch("/api/auth/user", {
+        const response = await fetch("http://localhost:5000/api/auth/user", {
           credentials: "include",
           headers: {
             "X-Requested-With": "XMLHttpRequest"

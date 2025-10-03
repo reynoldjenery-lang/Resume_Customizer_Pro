@@ -14,7 +14,13 @@ export default function Landing() {
 
   const [authDialog, setAuthDialog] = useState<'login' | 'register' | 'forgot-password' | null>(
     () => {
-      // Set initial dialog state based on current path
+      // Check URL parameters first
+      const params = new URLSearchParams(window.location.search);
+      const authParam = params.get('auth');
+      if (authParam === 'login') return 'login';
+      if (authParam === 'register') return 'register';
+
+      // Then check path if no auth param
       const path = window.location.pathname;
       if (path === '/login') return 'login';
       if (path === '/register') return 'register';
@@ -32,7 +38,9 @@ export default function Landing() {
               <div className="h-10 w-10 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center shadow-lg">
                 <FileText className="text-white" size={20} />
               </div>
-              <h1 className="text-xl font-bold text-foreground tracking-tight">ResumeCustomizer Pro</h1>
+              <h1 className="text-xl font-bold text-foreground tracking-tight">
+                ResumeCustomizer Pro
+              </h1>
             </div>
 
             <div className="flex gap-3">
@@ -108,7 +116,7 @@ export default function Landing() {
           <DialogHeader>
             <DialogTitle>Login to your account</DialogTitle>
           </DialogHeader>
-          <LoginForm 
+          <LoginForm
             onForgotPassword={() => setAuthDialog('forgot-password')}
             onSuccess={() => setAuthDialog(null)}
           />
@@ -178,9 +186,7 @@ export default function Landing() {
                 <div className="h-14 w-14 bg-gradient-to-br from-primary/20 to-primary/10 rounded-xl flex items-center justify-center mb-6">
                   <FileText className="text-primary" size={26} />
                 </div>
-                <h4 className="text-xl font-bold text-foreground mb-3">
-                  DOCX Upload & Editing
-                </h4>
+                <h4 className="text-xl font-bold text-foreground mb-3">DOCX Upload & Editing</h4>
                 <p className="text-muted-foreground leading-relaxed">
                   Upload your existing resume and edit it with our powerful rich-text editor. Full
                   Microsoft Word compatibility.
@@ -208,9 +214,7 @@ export default function Landing() {
                 <div className="h-14 w-14 bg-gradient-to-br from-orange-100 to-orange-50 rounded-xl flex items-center justify-center mb-6">
                   <Download className="text-orange-600" size={26} />
                 </div>
-                <h4 className="text-xl font-bold text-foreground mb-3">
-                  Export & Cloud Storage
-                </h4>
+                <h4 className="text-xl font-bold text-foreground mb-3">Export & Cloud Storage</h4>
                 <p className="text-muted-foreground leading-relaxed">
                   Download as DOCX/PDF or save directly to Google Drive. Access your resumes
                   anywhere.

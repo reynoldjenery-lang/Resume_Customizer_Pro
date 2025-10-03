@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { formatDistanceToNow, format } from 'date-fns';
 import { apiRequest } from '@/lib/queryClient';
@@ -92,6 +92,7 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
   const [replyData, setReplyData] = useState<any>(null);
   const [composeMode, setComposeMode] = useState<'compose' | 'reply' | 'reply-all' | 'forward'>('compose');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [autoLoadEnabled, setAutoLoadEnabled] = useState(true);
   
   const queryClient = useQueryClient();
 
@@ -111,7 +112,7 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
   });
 
   // Fetch email threads with paging and auto-refresh every 30 seconds
-  const THREADS_LIMIT = 50;
+  const THREADS_LIMIT = 100; // Increased limit for better user experience
   const threadsQuery = useInfiniteQuery({
     queryKey: ['/api/marketing/emails/threads', selectedFolder, searchQuery],
     queryFn: async ({ pageParam = 1 }: { pageParam?: number }) => {
@@ -146,6 +147,18 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
   const threadsLoading = threadsQuery.isLoading;
   const isFetching = threadsQuery.isFetching;
   const refetchThreads = threadsQuery.refetch;
+
+  // Debug logging
+  useEffect(() => {
+    console.log('Email threads data:', {
+      totalThreads: emailThreads.length,
+      pages: threadsQuery.data?.pages.length || 0,
+      hasNextPage: threadsQuery.hasNextPage,
+      isLoading: threadsLoading,
+      isFetching: isFetching,
+      selectedFolder
+    });
+  }, [emailThreads.length, threadsQuery.data?.pages.length, threadsQuery.hasNextPage, threadsLoading, isFetching, selectedFolder]);
 
   // Fetch messages for selected thread
   const { data: threadMessages = [], isLoading: threadMessagesLoading, isFetching: threadMessagesFetching } = useQuery<EmailMessage[]>({
@@ -345,6 +358,21 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
     setComposeOpen(true);
   };
 
+  // Auto-load more emails when scrolling near bottom
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (!autoLoadEnabled || !threadsQuery.hasNextPage || threadsQuery.isFetching) return;
+    
+    const target = e.currentTarget;
+    const { scrollTop, scrollHeight, clientHeight } = target;
+    const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+    
+    // Load more when 80% scrolled
+    if (scrollPercentage > 0.8) {
+      console.log('Auto-loading more emails...', { scrollPercentage, hasNextPage: threadsQuery.hasNextPage });
+      threadsQuery.fetchNextPage();
+    }
+  }, [autoLoadEnabled, threadsQuery]);
+
   return (
     <TooltipProvider>
   <div className="flex h-[800px] bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl overflow-hidden border border-slate-200 shadow-lg">
@@ -402,7 +430,7 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
               </div>
             </div>
             
-            {!sidebarCollapsed && (
+            {!sidebarCollapsed ? (
               <Button
                 onClick={handleCompose}
                 className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-md hover:shadow-lg transition-all"
@@ -410,6 +438,18 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
                 <Plus className="h-4 w-4 mr-2" />
                 Compose
               </Button>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={handleCompose}
+                    className="w-12 h-12 p-0 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-md hover:shadow-lg transition-all rounded-full mx-auto"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Compose</TooltipContent>
+              </Tooltip>
             )}
           </div>
 
@@ -540,7 +580,7 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
 
           <div className="flex-1 flex">
             {/* Email List */}
-              <div className={cn("transition-all duration-300 border-r border-slate-200 bg-white/50 backdrop-blur-sm", sidebarCollapsed ? "w-0 min-w-0" : "w-[36rem] min-w-[30rem]")}>
+              <div className="w-[36rem] min-w-[30rem] transition-all duration-300 border-r border-slate-200 bg-white/50 backdrop-blur-sm">
               {/* List Header */}
               <div className="p-3 border-b border-slate-200 bg-gradient-to-r from-white to-slate-50">
                 <div className="flex items-center gap-2">
@@ -560,6 +600,12 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
                   <Badge variant="secondary" className="text-xs">
                     {emailThreads.length}
                   </Badge>
+                  {/* Debug info */}
+                  {process.env.NODE_ENV === 'development' && (
+                    <Badge variant="outline" className="text-xs ml-2">
+                      Pages: {threadsQuery.data?.pages.length || 0}
+                    </Badge>
+                  )}
                 </div>
                 
                 <div className="flex items-center gap-1">
@@ -568,6 +614,21 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   )}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => setAutoLoadEnabled(!autoLoadEnabled)}
+                        className={cn(autoLoadEnabled ? "text-blue-600 bg-blue-50" : "text-gray-500")}
+                      >
+                        <RefreshCw className={cn("h-4 w-4", autoLoadEnabled && "text-blue-600")} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {autoLoadEnabled ? "Disable auto-load" : "Enable auto-load"}
+                    </TooltipContent>
+                  </Tooltip>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm">
@@ -585,7 +646,11 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
               </div>
 
               {/* Email Threads */}
-              <ScrollArea className="h-[calc(100%-60px)] pr-1">
+              <div className="flex-1 overflow-hidden">
+                <div 
+                  className="h-full overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100" 
+                  onScroll={handleScroll}
+                >
                 {threadsLoading ? (
                   <div className="p-8 text-center">
                     <div className="relative">
@@ -607,6 +672,17 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
                     <p className="text-xs text-slate-500 mb-4">
                       {searchQuery ? 'Try a different search term' : 'Your mailbox is empty'}
                     </p>
+                    {/* Debug info for empty state */}
+                    {process.env.NODE_ENV === 'development' && (
+                      <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-left">
+                        <p><strong>Debug Info:</strong></p>
+                        <p>Loading: {threadsLoading ? 'Yes' : 'No'}</p>
+                        <p>Fetching: {isFetching ? 'Yes' : 'No'}</p>
+                        <p>Pages: {threadsQuery.data?.pages.length || 0}</p>
+                        <p>Has Next: {threadsQuery.hasNextPage ? 'Yes' : 'No'}</p>
+                        <p>Error: {threadsQuery.error ? String(threadsQuery.error) : 'None'}</p>
+                      </div>
+                    )}
                     {!searchQuery && emailAccounts.length > 0 && (
                       <div className="space-y-2">
                         <p className="text-xs text-gray-400">
@@ -718,19 +794,80 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
                       </div>
                     ))}
                     {/* Load more control */}
-                    <div className="flex items-center justify-center p-4">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => threadsQuery.fetchNextPage()}
-                        disabled={threadsLoading || isFetching || (threadsQuery.data && threadsQuery.data.pages[threadsQuery.data.pages.length - 1].length < THREADS_LIMIT)}
-                      >
-                        {threadsLoading || isFetching ? 'Loading...' : (threadsQuery.data && threadsQuery.data.pages[threadsQuery.data.pages.length - 1].length < THREADS_LIMIT) ? 'No more' : 'Load more'}
-                      </Button>
+                    <div className="flex flex-col items-center justify-center p-6 border-t border-slate-200 bg-gradient-to-b from-white to-slate-50">
+                      {threadsQuery.hasNextPage ? (
+                        <div className="text-center space-y-3">
+                          <p className="text-sm text-gray-600">
+                            Showing {emailThreads.length} emails
+                            {threadsQuery.data && threadsQuery.data.pages.length > 1 && (
+                              <span className="text-gray-500"> (Page {threadsQuery.data.pages.length})</span>
+                            )}
+                          </p>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="default"
+                              onClick={() => threadsQuery.fetchNextPage()}
+                              disabled={threadsLoading || isFetching}
+                              className="bg-white hover:bg-blue-50 border-blue-200 text-blue-700 hover:border-blue-300 shadow-sm"
+                            >
+                              {threadsLoading || isFetching ? (
+                                <>
+                                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                                  Loading...
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Load more
+                                </>
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="default"
+                              onClick={async () => {
+                                // Load all remaining pages
+                                while (threadsQuery.hasNextPage && !threadsQuery.isFetching) {
+                                  await threadsQuery.fetchNextPage();
+                                }
+                              }}
+                              disabled={threadsLoading || isFetching}
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            >
+                              Load all emails
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                console.log('Manual refresh triggered');
+                                refetchThreads();
+                              }}
+                              disabled={threadsLoading || isFetching}
+                              className="text-gray-600 hover:text-gray-700"
+                            >
+                              <RefreshCw className="h-3 w-3 mr-1" />
+                              Refresh
+                            </Button>
+                          </div>
+                        </div>
+                      ) : emailThreads.length > 0 ? (
+                        <div className="text-center">
+                          <div className="h-12 w-12 mx-auto mb-3 rounded-full bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center">
+                            <Check className="h-6 w-6 text-green-600" />
+                          </div>
+                          <p className="text-sm font-medium text-gray-700 mb-1">All emails loaded</p>
+                          <p className="text-xs text-gray-500">
+                            Showing all {emailThreads.length} email{emailThreads.length === 1 ? '' : 's'} in {selectedFolder}
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 )}
-              </ScrollArea>
+                </div>
+              </div>
             </div>
 
             {/* Email Content */}
@@ -950,6 +1087,23 @@ export default function ModernEmailClient({ accountFilter }: { accountFilter?: s
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Floating Compose Button (when sidebar collapsed) */}
+        {sidebarCollapsed && (
+          <div className="fixed bottom-6 right-6 z-50">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={handleCompose}
+                  className="w-14 h-14 rounded-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+                >
+                  <Plus className="h-6 w-6" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Compose Email</TooltipContent>
+            </Tooltip>
+          </div>
+        )}
 
         {/* Compose Dialog */}
         <ComposeDialog

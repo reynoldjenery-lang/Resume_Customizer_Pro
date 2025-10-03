@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useLocation } from 'wouter';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { LoadingButton } from '@/components/ui/loading-button';
@@ -41,6 +42,7 @@ export function LoginForm({ onForgotPassword, onSuccess }: LoginFormProps = {}) 
   const [attemptCount, setAttemptCount] = useState(0);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const [requiresVerification, setRequiresVerification] = useState(false);
 
@@ -94,6 +96,10 @@ export function LoginForm({ onForgotPassword, onSuccess }: LoginFormProps = {}) 
       // Proactively refresh the user query and wait for session to be readable
       await queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
 
+      // Get any saved redirect URL
+      const redirectUrl = localStorage.getItem('redirectAfterLogin');
+      localStorage.removeItem('redirectAfterLogin'); // Clear it after reading
+
       // Poll the user endpoint briefly to avoid race conditions where the session
       // cookie isn't yet available to subsequent requests.
       const waitForSession = async (timeoutMs = 2500, intervalMs = 150) => {
@@ -125,8 +131,11 @@ export function LoginForm({ onForgotPassword, onSuccess }: LoginFormProps = {}) 
           : 'Logged in. Initializing your session...',
       });
 
-      // Close dialog if callback provided, otherwise let Router handle navigation
+      // Close dialog if callback provided
       onSuccess?.();
+
+      // Redirect to the saved URL or default to dashboard
+      setLocation(redirectUrl || '/dashboard');
     } catch (error: any) {
       setAttemptCount((prev) => prev + 1);
 

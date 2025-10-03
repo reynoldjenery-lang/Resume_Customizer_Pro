@@ -7,6 +7,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { useAuth } from '@/hooks/useAuth';
 import { lazy, Suspense, memo, useEffect } from 'react';
 import { PageLoader } from '@/components/ui/page-loader';
+import { PrivateRoute } from '@/components/auth/private-route';
 
 // Lazy load all pages for optimal bundle splitting
 const NotFound = lazy(() => import('@/pages/not-found'));
@@ -43,29 +44,22 @@ const Router = memo(() => {
   }
 
   return (
-    <Suspense
-      fallback={<PageLoader variant="branded" text="Loading application..." />}
-    >
+    <Suspense fallback={<PageLoader variant="branded" text="Loading application..." />}>
       <Switch>
-        {isAuthenticated ? (
-          // Authenticated routes
-          <>
-            <Route path="/" component={Dashboard} />
-            <Route path="/editor" component={MultiResumeEditorPage} />
-            <Route path="/marketing" component={MarketingPage} />
-            <Route path="/privacy" component={Privacy} />
-          </>
-        ) : (
-          // Non-authenticated routes
-          <>
-            <Route path="/" component={Landing} />
-            <Route path="/login" component={Landing} />
-            <Route path="/register" component={Landing} />
-            <Route path="/verify-email" component={VerifyEmail} />
-            <Route path="/reset-password" component={ResetPassword} />
-            <Route path="/privacy" component={Privacy} />
-          </>
-        )}
+        {/* Public Routes */}
+        <Route path="/" component={Landing} />
+        <Route path="/login" component={Landing} />
+        <Route path="/register" component={Landing} />
+        <Route path="/verify-email" component={VerifyEmail} />
+        <Route path="/reset-password" component={ResetPassword} />
+        <Route path="/privacy" component={Privacy} />
+
+        {/* Protected Routes */}
+        <PrivateRoute path="/dashboard" component={Dashboard} />
+        <PrivateRoute path="/editor" component={MultiResumeEditorPage} />
+        <PrivateRoute path="/marketing" component={MarketingPage} />
+
+        {/* Catch-all route */}
         <Route component={NotFound} />
       </Switch>
     </Suspense>
@@ -82,9 +76,9 @@ const App = memo(() => {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Toaster />
-          <SonnerToaster 
-            position="top-right" 
-            richColors 
+          <SonnerToaster
+            position="top-right"
+            richColors
             closeButton
             duration={4000}
             toastOptions={{
@@ -92,8 +86,8 @@ const App = memo(() => {
               style: {
                 background: 'hsl(var(--background))',
                 color: 'hsl(var(--foreground))',
-                border: '1px solid hsl(var(--border))'
-              }
+                border: '1px solid hsl(var(--border))',
+              },
             }}
           />
           <Router />
